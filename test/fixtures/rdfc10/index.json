@@ -1,0 +1,104 @@
+[
+ {
+  "id": "#test001c",
+  "name": "simple id",
+  "file": "test001",
+  "complexity": "low"
+ },
+ {
+  "id": "#test002c",
+  "name": "duplicate property iri values",
+  "file": "test002",
+  "complexity": "low"
+ },
+ {
+  "id": "#test003c",
+  "name": "bnode",
+  "file": "test003",
+  "complexity": "low"
+ },
+ {
+  "id": "#test004c",
+  "name": "bnode plus embed w/subject",
+  "file": "test004",
+  "complexity": "low"
+ },
+ {
+  "id": "#test005c",
+  "name": "bnode embed",
+  "file": "test005",
+  "complexity": "low"
+ },
+ {
+  "id": "#test006c",
+  "name": "multiple rdf types",
+  "file": "test006",
+  "complexity": "low"
+ },
+ {
+  "id": "#test008c",
+  "name": "single subject complex",
+  "file": "test008",
+  "complexity": "low"
+ },
+ {
+  "id": "#test009c",
+  "name": "multiple subjects - complex",
+  "file": "test009",
+  "complexity": "low"
+ },
+ {
+  "id": "#test010c",
+  "name": "type",
+  "file": "test010",
+  "complexity": "low"
+ },
+ {
+  "id": "#test011c",
+  "name": "type-coerced type",
+  "file": "test011",
+  "complexity": "low"
+ },
+ {
+  "id": "#test013c",
+  "name": "type-coerced type, cycle",
+  "file": "test013",
+  "complexity": "low"
+ },
+ {
+  "id": "#test014c",
+  "name": "check types",
+  "file": "test014",
+  "complexity": "low"
+ },
+ {
+  "id": "#test016c",
+  "name": "blank node - dual link - embed",
+  "file": "test016",
+  "complexity": "low"
+ },
+ {
+  "id": "#test017c",
+  "name": "blank node - dual link - non-embed",
+  "file": "test017",
+  "complexity": "low"
+ },
+ {
+  "id": "#test019c",
+  "name": "blank node - disjoint self links",
+  "file": "test019",
+  "complexity": "medium"
+ },
+ {
+  "id": "#test021c",
+  "name": "blank node - circle of 2",
+  "file": "test021",
+  "complexity": "medium"
+ },
+ {
+  "id": "#test022c",
+  "name": "blank node - double circle of 2",
+  "file": "test022",
+  "complexity": "medium"
+ }
+]
