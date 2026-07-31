@@ -20,3 +20,12 @@ jobs:
       - run: clojure -M:test
 
       - run: clojure -M:lint
+
+      # The :cljs host has its own byte encoding, hex formatting and code point
+      # walk, all of which a canonical hash depends on. package.json carried this
+      # script with no test file behind it, so the cljs path went unverified.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install
+      - run: npm run smoke

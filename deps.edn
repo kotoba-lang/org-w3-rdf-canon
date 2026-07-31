@@ -1,10 +1,10 @@
 {:paths ["src"]
  :deps {io.github.kotoba-lang/org-w3-nquads
         {:git/url "https://github.com/kotoba-lang/org-w3-nquads.git"
-         :git/sha "e1505075215db7906955a0ee222233d240dd7869"}
+         :git/sha "794846ca2e718f0b390b0856a8487bc40fa43323"}
         io.github.kotoba-lang/io-multiformats
         {:git/url "https://github.com/kotoba-lang/io-multiformats.git"
-         :git/sha "37843825a77bc6b74f4a1882471d252f6f931f58"}}
+         :git/sha "dc5200329d2fabce6edb7ca5c87c477cec0ea162"}}
  :aliases
  {:test {:extra-paths ["test"]
          :extra-deps {io.github.cognitect-labs/test-runner

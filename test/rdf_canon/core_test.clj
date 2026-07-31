@@ -1,11 +1,12 @@
 (ns rdf-canon.core-test
-  "Correctness is measured against the OFFICIAL W3C test suite, not against this
-   implementation's own output. `test/fixtures/rdfc10/` holds input/expected pairs
-   checked out of https://w3c.github.io/rdf-canon/tests/ and committed, so the suite
-   does not depend on the network.
+  "Correctness is measured against the ENTIRE official W3C test suite, not against
+   this implementation's own output. `test/fixtures/rdfc10/` holds every input and
+   expected result from https://w3c.github.io/rdf-canon/tests/ — 64 canonical-form
+   vectors, 21 issued-identifier-map vectors and the poison test — committed so the
+   suite does not depend on the network.
 
-   A canonicalizer that only agreed with itself would be worthless — the entire
-   point is that two independent parties produce the same bytes."
+   A canonicalizer that only agreed with itself would be worthless: the entire point
+   is that two independent parties produce the same bytes."
   (:require [clojure.data.json :as json]
             [clojure.java.io :as io]
             [clojure.test :refer [deftest is testing]]
@@ -20,67 +21,158 @@
 (def ^:private index
   (delay (json/read-str (fixture "index.json") :key-fn keyword)))
 
-;; ── the official suite ───────────────────────────────────────────────────────
+(defn- opts-for [{:keys [hashAlgorithm]}]
+  (if (= "SHA384" hashAlgorithm) {:hash-algorithm :sha384} {}))
 
-(deftest official-w3c-vectors
-  (testing "every vector either matches W3C's expected output byte for byte, or
-            throws :rdf-canon/n-degree-required — never a third thing"
-    (let [results
-          (for [{:keys [file name complexity]} @index]
-            (let [input (fixture (str file "-in.nq"))
-                  expected (fixture (str file "-out.nq"))]
-              (try
-                (let [actual (c14n/canonicalize input)]
-                  {:file file :name name :complexity complexity
-                   :outcome (if (= expected actual) :match :MISMATCH)
-                   :expected expected :actual actual})
-                (catch clojure.lang.ExceptionInfo e
-                  {:file file :name name :complexity complexity
-                   :outcome (or (:rdf-canon/error (ex-data e))
-                                (:nquads/error (ex-data e))
-                                :THREW)}))))
+;; ── the official suite: canonical form ───────────────────────────────────────
+
+(deftest official-w3c-eval-vectors
+  (testing "every canonical-form vector matches W3C's expected output byte for byte"
+    (let [entries (filter #(= "eval" (:kind %)) @index)
+          results (for [{:keys [action result] :as e} entries]
+                    (let [expected (fixture result)]
+                      (try
+                        (let [actual (c14n/canonicalize (fixture action) (opts-for e))]
+                          (assoc e :outcome (if (= expected actual) :match :MISMATCH)
+                                 :expected expected :actual actual))
+                        (catch clojure.lang.ExceptionInfo ex
+                          (assoc e :outcome :THREW
+                                 :error (or (:rdf-canon/error (ex-data ex))
+                                            (:nquads/error (ex-data ex)))
+                                 :message (ex-message ex))))))
           matched (filter #(= :match (:outcome %)) results)
-          deferred (filter #(= :rdf-canon/n-degree-required (:outcome %)) results)
-          other (remove #(#{:match :rdf-canon/n-degree-required} (:outcome %)) results)]
+          bad (remove #(= :match (:outcome %)) results)]
+      (is (= (count entries) (count matched))
+          (str "not matching: "
+               (pr-str (map #(select-keys % [:id :name :outcome :error :expected :actual])
+                            bad))))
+      (println (str "\n  official RDFC-1.0 eval vectors: " (count matched) "/"
+                    (count entries) " byte-identical to W3C")))))
 
-      (testing "nothing produces a WRONG canonical form"
-        ;; This is the assertion that matters. A mismatch means we emitted a hash
-        ;; that disagrees with W3C — worse than refusing.
-        (is (empty? (filter #(= :MISMATCH (:outcome %)) results))
-            (str "mismatches: "
-                 (pr-str (map (fn [r] {:file (:file r)
-                                       :expected (:expected r)
-                                       :actual (:actual r)})
-                              (filter #(= :MISMATCH (:outcome %)) results))))))
+;; ── the official suite: issued identifier map ────────────────────────────────
+;; A canonical form can be right while the map is wrong, so W3C tests them apart.
 
-      (testing "and every other outcome is the documented refusal, not a surprise"
-        (is (empty? other) (str "unexpected outcomes: " (pr-str other))))
+(deftest official-w3c-map-vectors
+  (testing "the input-label -> canonical-label map matches W3C's expected map"
+    (let [entries (filter #(= "map" (:kind %)) @index)
+          results (for [{:keys [action result] :as e} entries]
+                    (let [expected (json/read-str (fixture result))]
+                      (try
+                        (let [{:keys [issued]}
+                              (c14n/canonicalize-dataset (nq/parse (fixture action))
+                                                         (opts-for e))]
+                          (assoc e :outcome (if (= expected issued) :match :MISMATCH)
+                                 :expected expected :actual issued))
+                        (catch clojure.lang.ExceptionInfo ex
+                          (assoc e :outcome :THREW :message (ex-message ex))))))
+          matched (filter #(= :match (:outcome %)) results)
+          bad (remove #(= :match (:outcome %)) results)]
+      (is (= (count entries) (count matched))
+          (str "not matching: "
+               (pr-str (map #(select-keys % [:id :name :outcome :expected :actual])
+                            bad))))
+      (println (str "  official RDFC-1.0 map vectors:  " (count matched) "/"
+                    (count entries) " identical to W3C")))))
 
-      (testing "the simple path actually handles a useful number of them"
-        (is (pos? (count matched)))
-        (println (str "\n  official RDFC-1.0 vectors: " (count matched) " matched, "
-                      (count deferred) " deferred to N-degree, "
-                      (count other) " other, of " (count results) " total")))
+;; ── the official suite: the poison test MUST be refused ──────────────────────
 
-      (testing "and the deferred ones are the ones with shared first-degree hashes"
-        (doseq [d deferred]
-          (is (= :rdf-canon/n-degree-required (:outcome d))))))))
+(deftest official-w3c-negative-vector-is-refused
+  (testing "test074 is a 10-node clique of mutually referencing blank nodes.
+            §4.4.3 says implementations MUST defend against denial of service by
+            terminating early, so returning ANY canonical form here — however
+            correct-looking — would fail the spec. W3C classes it as a negative
+            test for that reason."
+    (let [entries (filter #(= "negative" (:kind %)) @index)]
+      (is (= 1 (count entries)) "the suite has exactly one negative test")
+      (doseq [{:keys [action id]} entries]
+        (let [outcome (try
+                        {:returned (c14n/canonicalize (fixture action))}
+                        (catch clojure.lang.ExceptionInfo ex
+                          {:error (:rdf-canon/error (ex-data ex))}))]
+          (is (= :rdf-canon/work-limit-exceeded (:error outcome))
+              (str id " must be refused, not answered. got: " (pr-str outcome))))))))
 
-;; ── the refusal is explicit and informative ──────────────────────────────────
+;; ── the work limit is real, and bounded ──────────────────────────────────────
 
-(deftest sharing-a-first-degree-hash-refuses-rather-than-guessing
-  (testing "two blank nodes indistinguishable by their first-degree information.
-            Any ordering we invented would look normal and disagree with everyone."
-    (let [p (nq/iri "http://example.com/p")
-          ;; _:b0 and _:b1 appear in structurally identical quads, so their
-          ;; first-degree hashes collide by construction.
-          dataset [{:subject (nq/blank "b0") :predicate p :object (nq/literal "v")}
-                   {:subject (nq/blank "b1") :predicate p :object (nq/literal "v")}]
-          e (try (c14n/canonicalize dataset)
-                 (catch clojure.lang.ExceptionInfo ex ex))]
-      (is (= :rdf-canon/n-degree-required (:rdf-canon/error (ex-data e))))
-      (testing "and it names the labels involved, so a caller can see why"
-        (is (= #{"b0" "b1"} (set (:labels (ex-data e)))))))))
+(deftest legitimate-vectors-fit-well-inside-the-default-budget
+  (testing "the default is only defensible if real documents do not come close to
+            it — otherwise it is a limit that breaks valid input"
+    (let [entries (filter #(= "eval" (:kind %)) @index)
+          tight c14n/measured-worst-legitimate-work
+          failures (for [{:keys [action] :as e} entries
+                         :let [r (try (c14n/canonicalize (fixture action)
+                                                         (assoc (opts-for e)
+                                                                :max-work tight))
+                                      :ok
+                                      (catch clojure.lang.ExceptionInfo ex
+                                        (:rdf-canon/error (ex-data ex))))]
+                         :when (not= :ok r)]
+                     [(:id e) r])]
+      (is (empty? failures)
+          (str "these legitimate vectors needed more than " tight
+               " work units: " (pr-str failures)))
+      (testing "and that measured worst case is a real bound: one unit less fails"
+        ;; Keeps `measured-worst-legitimate-work` honest. If someone loosens the
+        ;; algorithm and the true cost drops, this fails and the constant gets
+        ;; re-measured instead of silently overstating the margin.
+        (is (some (fn [{:keys [action] :as e}]
+                    (= :rdf-canon/work-limit-exceeded
+                       (try (c14n/canonicalize (fixture action)
+                                               (assoc (opts-for e)
+                                                      :max-work (dec tight)))
+                            nil
+                            (catch clojure.lang.ExceptionInfo ex
+                              (:rdf-canon/error (ex-data ex))))))
+                  entries)
+            (str "no vector actually needs " tight
+                 " units, so that constant overstates the cost")))
+      (testing "and the default leaves at least an order of magnitude of headroom"
+        (is (> c14n/default-max-work (* 10 tight))))
+      (println (str "  every legitimate vector fits in " tight
+                    " work units (measured worst case; default "
+                    c14n/default-max-work ")")))))
+
+(deftest the-work-limit-can-be-raised-but-the-clique-still-loses
+  (testing "raising the limit does not make the clique tractable — it is factorial,
+            so a 20x budget buys nothing. This is why the answer is refusal rather
+            than a bigger number."
+    (let [action (:action (first (filter #(= "negative" (:kind %)) @index)))]
+      (is (= :rdf-canon/work-limit-exceeded
+             (:rdf-canon/error
+              (ex-data (try (c14n/canonicalize (fixture action) {:max-work 2000000})
+                            (catch clojure.lang.ExceptionInfo e e)))))))))
+
+(deftest the-work-limit-names-itself-in-the-error
+  (let [p (nq/iri "http://example.com/p")
+        clique (for [a ["b0" "b1" "b2" "b3" "b4" "b5"]
+                     b ["b0" "b1" "b2" "b3" "b4" "b5"]]
+                 {:subject (nq/blank a) :predicate p :object (nq/blank b)})
+        ex (try (c14n/canonicalize clique {:max-work 50})
+                (catch clojure.lang.ExceptionInfo e e))]
+    (is (= :rdf-canon/work-limit-exceeded (:rdf-canon/error (ex-data ex))))
+    (is (= :max-work (:limit-kind (ex-data ex))))
+    (testing "and the message explains WHY, not just that a limit was hit"
+      (is (re-find #"denial of service" (ex-message ex))))))
+
+;; ── SHA-384, the spec's optional hash ────────────────────────────────────────
+
+(deftest sha384-is-a-genuinely-different-hash
+  (testing "test075 is test020 with SHA-384, and the suite expects a different
+            result — the hash decides blank node order, so it is not a cosmetic
+            parameter"
+    (let [in (fixture "test020-in.nq")]
+      (is (not= (c14n/canonical-hash in)
+                (c14n/canonical-hash in {:hash-algorithm :sha384}))
+          "the two algorithms must not produce the same digest")
+      (is (= 64 (count (c14n/canonical-hash in))) "sha-256 hex")
+      (is (= 96 (count (c14n/canonical-hash in {:hash-algorithm :sha384})))
+          "sha-384 hex"))))
+
+(deftest an-unknown-hash-algorithm-is-refused
+  (is (= :rdf-canon/unknown-hash-algorithm
+         (:rdf-canon/error
+          (ex-data (try (c14n/canonicalize "" {:hash-algorithm :md5})
+                        (catch clojure.lang.ExceptionInfo e e)))))))
 
 ;; ── code point order, which is NOT UTF-16 order ───────────────────────────────
 
@@ -103,7 +195,7 @@
 
   (testing "and they agree across the BMP, where code units and code points coincide"
     (doseq [[a b] [["a" "b"] ["<" ">"] ["_:a" "_:z"] ["" "a"] ["aa" "ab"]
-                   ["\u00e9" "\u00ea"]]]
+                   ["é" "ê"]]]
       (is (= (int (Math/signum (double (compare a b))))
              (int (Math/signum (double (c14n/compare-code-points a b)))))
           (str (pr-str a) " vs " (pr-str b)))))
@@ -139,6 +231,41 @@
           (ex-data (try (c14n/hash-first-degree {} "nope")
                         (catch clojure.lang.ExceptionInfo e e)))))))
 
+;; ── N-degree hashing resolves what first-degree cannot ───────────────────────
+
+(deftest two-nodes-sharing-a-first-degree-hash-are-now-resolved
+  (testing "these two are indistinguishable by their own quads — first-degree
+            hashing collides by construction. Before N-degree hashing existed this
+            threw; now it must produce a stable canonical form."
+    (let [p (nq/iri "http://example.com/p")
+          dataset [{:subject (nq/blank "b0") :predicate p :object (nq/literal "v")}
+                   {:subject (nq/blank "b1") :predicate p :object (nq/literal "v")}]
+          out (c14n/canonicalize dataset)]
+      (is (= (str "_:c14n0 <http://example.com/p> \"v\" .\n"
+                  "_:c14n1 <http://example.com/p> \"v\" .\n")
+             out))
+      (testing "and swapping the input labels gives the same canonical form —
+                the property the whole algorithm exists for"
+        (is (= out (c14n/canonicalize
+                    [{:subject (nq/blank "b1") :predicate p :object (nq/literal "v")}
+                     {:subject (nq/blank "b0") :predicate p
+                      :object (nq/literal "v")}])))))))
+
+(deftest isomorphic-graphs-canonicalize-identically-under-relabelling
+  (testing "relabelling every blank node must not change the canonical form. This
+            is checked on a graph whose blank nodes are genuinely interconnected,
+            so it exercises N-degree hashing rather than the simple path."
+    (let [p (nq/iri "http://example.com/p")
+          q (nq/iri "http://example.com/q")
+          build (fn [x y z]
+                  [{:subject (nq/blank x) :predicate p :object (nq/blank y)}
+                   {:subject (nq/blank y) :predicate p :object (nq/blank z)}
+                   {:subject (nq/blank z) :predicate p :object (nq/blank x)}
+                   {:subject (nq/blank x) :predicate q :object (nq/literal "tag")}])]
+      (is (= (c14n/canonicalize (build "a" "b" "c"))
+             (c14n/canonicalize (build "x" "y" "z"))
+             (c14n/canonicalize (build "b" "c" "a")))))))
+
 ;; ── §4.5 the identifier issuer ───────────────────────────────────────────────
 
 (deftest the-issuer-is-a-bijection
@@ -151,7 +278,9 @@
     (testing "re-issuing returns the SAME identifier — a second would break the
               bijection the canonical form depends on"
       (is (= a a-again))
-      (is (= 2 (:counter i3)) "and does not advance the counter"))))
+      (is (= 2 (:counter i3)) "and does not advance the counter"))
+    (testing "and :order records issuance sequence, which step 5.3.1 depends on"
+      (is (= ["x" "y"] (:order i3))))))
 
 ;; ── a graph with no blank nodes at all ───────────────────────────────────────
 
@@ -173,6 +302,12 @@
     (is (= (c14n/canonical-hash [a b]) (c14n/canonical-hash [b a]))
         "the input order of statements must not change the hash")
     (is (= 64 (count (c14n/canonical-hash [a b]))) "sha-256 as hex")))
+
+(deftest a-repeated-quad-is-the-same-quad
+  (testing "an RDF dataset is a SET, so a duplicated line must not appear twice in
+            the canonical form"
+    (let [line "<http://ex.com/s> <http://ex.com/p> \"v\" .\n"]
+      (is (= line (c14n/canonicalize (str line line)))))))
 
 (deftest canonicalize-accepts-nquads-text-or-statements
   (let [text "<http://ex.com/s> <http://ex.com/p> \"v\" .\n"]
