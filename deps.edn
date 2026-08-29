@@ -4,7 +4,7 @@
          :git/sha "794846ca2e718f0b390b0856a8487bc40fa43323"}
         io.github.kotoba-lang/io-multiformats
         {:git/url "https://github.com/kotoba-lang/io-multiformats.git"
-         :git/sha "dc5200329d2fabce6edb7ca5c87c477cec0ea162"}}
+         :git/sha "561fe7dfada3db852b127f06d41750dabd3cead9"}}
  :aliases
  {:test {:extra-paths ["test"]
          :extra-deps {io.github.cognitect-labs/test-runner
