@@ -59,7 +59,7 @@ the poison clique (test074):    refused, as a negative test requires
 The map tests are separate because a canonical form can be right while the
 input-label → canonical-label map is wrong.
 
-Both hosts are checked: `clojure -M:test` on the JVM and `npm run smoke` on nbb, with
+Both hosts are checked: `kbb -M:test` on the JVM and `npm run smoke` on nbb, with
 the same canonical forms and hash strings pinned in both. This namespace has three
 reader conditionals a hash depends on — byte encoding, hex formatting and the code
 point walk — so a host that differed in any of them would compute a different
@@ -96,8 +96,8 @@ self-consistent implementation passes its own tests no matter how wrong it is.
 ## Test
 
 ```bash
-clojure -M:dev:test     # JVM, the whole official suite
-clojure -M:lint
+kbb -M:dev:test     # JVM, the whole official suite
+kbb -M:lint
 npm install && npm run smoke   # the nbb host, same values pinned
 ```
 
