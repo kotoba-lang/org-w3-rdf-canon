@@ -9,7 +9,7 @@
    is that two independent parties produce the same bytes."
   (:require [clojure.data.json :as json]
             [clojure.java.io :as io]
-            [clojure.test :refer [deftest is testing]]
+            [kotoba.test :refer [deftest is testing]]
             [nquads.core :as nq]
             [rdf-canon.core :as c14n]))
 
