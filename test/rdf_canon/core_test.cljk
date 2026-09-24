@@ -7,7 +7,7 @@
 
    A canonicalizer that only agreed with itself would be worthless: the entire point
    is that two independent parties produce the same bytes."
-  (:require [clojure.data.json :as json]
+  (:require [kotoba.json :as json]
             [clojure.java.io :as io]
             [kotoba.test :refer [deftest is testing]]
             [nquads.core :as nq]
